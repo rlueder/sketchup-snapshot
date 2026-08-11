@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Snapshot</title>
+  <!-- Modus is Trimble's design system, the one SketchUp is built on. Bundled
+       locally rather than fetched, so the panel works with no network. -->
+  <link rel="stylesheet" href="vendor/modus/modus-bootstrap.min.css">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- Rendered by panel.js -->
+    <p class="empty">Loading…</p>
+  </div>
+
+  <template id="tpl-snapshot">
+    <li class="snap">
+      <div class="snap-dot"></div>
+      <div class="snap-body">
+        <p class="snap-subject"></p>
+        <p class="snap-meta"><span class="snap-time"></span> · <span class="snap-sha"></span></p>
+        <p class="snap-detail"></p>
+      </div>
+      <div class="snap-actions">
+        <button type="button" class="btn btn-sm btn-outline-secondary snap-delete" title="Remove this snapshot from the list">Remove</button>
+      </div>
+    </li>
+  </template>
+
+  <script src="panel.js"></script>
+</body>
+</html>

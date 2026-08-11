@@ -1,0 +1,320 @@
+/* Snapshot panel.
+ *
+ * Modus (Trimble's design system, the one SketchUp itself is built on)
+ * provides the controls and the palette; this file provides layout and the
+ * few things Modus has no component for — the history timeline above all.
+ *
+ * Every colour below is a Modus variable rather than a value. That is what
+ * makes the panel match SketchUp, and it is also what gives us dark mode for
+ * free: Modus swaps the whole set behind [data-bs-theme="dark"], which
+ * panel.js sets from the OS preference. There is no second palette here to
+ * drift out of step.
+ */
+
+:root {
+  --bg: var(--bs-body-bg);
+  --bg-raised: var(--bs-body-bg);
+  --bg-sunken: var(--bs-secondary-bg-subtle);
+  --border: var(--bs-border-color);
+  --text: var(--bs-body-color);
+  --text-dim: var(--bs-secondary-color);
+  --accent: var(--bs-primary);
+  --danger: var(--bs-danger);
+  --warn-bg: var(--bs-warning-bg-subtle);
+  --warn-border: var(--bs-warning-border-subtle);
+  --warn-text: var(--bs-warning-text-emphasis);
+  --radius: var(--bs-border-radius);
+}
+
+html, body {
+  height: 100%;
+}
+
+/* Modus's reboot already sets the body font and colours. */
+body {
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 12px;
+  gap: 12px;
+}
+
+/* --- header --------------------------------------------------------------- */
+
+.header { display: flex; flex-direction: column; gap: 8px; }
+
+.model-name {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 1rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.variation-bar { display: flex; flex-direction: column; gap: 5px; }
+
+.variation-caption {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.variation-select { font-weight: 600; }
+
+.compose { display: flex; flex-direction: column; gap: 5px; }
+
+/* The picker and the field beneath it are one thought, so they live in one
+   container with one gap rather than two blocks of .app separated by its
+   larger one. */
+.top { display: flex; flex-direction: column; gap: 6px; }
+
+/* --- sections ------------------------------------------------------------- */
+
+.section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section.grow { flex: 1 1 auto; min-height: 0; }
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Not ".row": Bootstrap owns that name, and its `.row > *` rule forces every
+   child to width:100%, which stacks a field and its button vertically. */
+.field-row { display: flex; gap: 8px; align-items: center; }
+/* Bootstrap gives .form-select and .form-control width:100%, which would
+   squeeze anything sharing the row out of sight. */
+.field-row > input,
+.field-row > select { flex: 1 1 auto; min-width: 0; width: auto; }
+
+.hint { margin: 0; font-size: 0.6875rem; color: var(--text-dim); }
+
+/* An icon-only button, sized so it lines up with a small text input. */
+.icon-button { display: inline-flex; align-items: center; justify-content: center; }
+.icon-button svg { display: block; width: 17px; height: 17px; }
+
+/* --- history -------------------------------------------------------------- */
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 80px;
+}
+
+/* The rail separates the rows on its own, so there are no dividers as well. */
+.snap {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  /* Room on the right so Remove never sits against the hover highlight. */
+  padding: 7px 8px 7px 2px;
+}
+
+/* Drawn on the row rather than the dot, so top and bottom stretch with the
+   row — which grows when a snapshot carries detail text. The dot is opaque
+   and sits on top of the rail. */
+.snap:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 8.5px;
+  top: 25px;
+  bottom: -12px;
+  width: 1px;
+  background: var(--border);
+}
+
+.snap-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.snap.current .snap-dot { border-color: var(--accent); background: var(--accent); }
+
+.snap-body { flex: 1 1 auto; min-width: 0; }
+.snap-subject { margin: 0; overflow-wrap: anywhere; }
+.snap.current .snap-subject { font-weight: 600; }
+.snap-meta { margin: 1px 0 0; font-size: 0.6875rem; color: var(--text-dim); }
+
+.snap-detail {
+  margin: 3px 0 0;
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.snap-detail:empty { display: none; }
+
+.snap-actions { flex: none; display: flex; align-items: center; }
+
+/* The row is the control, and the cursor has to say so across the whole of
+   it: text nodes default to an I-beam, which reads as "select me" rather than
+   "click me". */
+.snap.clickable,
+.snap.clickable * { cursor: pointer; }
+
+.snap.clickable {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.snap.clickable:hover,
+.snap.clickable:focus-visible {
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+  outline: none;
+}
+
+.snap.clickable:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* Removing is the destructive one, so it stays quiet until the row is under
+   the pointer, and then turns red rather than Modus's default outline. */
+.snap-delete { opacity: 0.5; }
+.snap:hover .snap-delete,
+.snap-delete:focus { opacity: 1; }
+
+.snap .snap-delete:hover,
+.snap .snap-delete:focus-visible {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.snap.current .snap-delete { display: none; }
+
+.snap-rename {
+  /* A row being renamed is never clickable, so it cannot inherit the pointer.
+     Said anyway, so a later change to the row cannot take the text cursor
+     away from a field being typed in. */
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.snap.current .snap-subject { cursor: default; }
+
+/* --- notices -------------------------------------------------------------- */
+
+.notice {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.75rem;
+}
+
+.trial {
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.6875rem;
+}
+
+.trial.ended { border-color: var(--danger); }
+.trial .btn-link { font-size: 0.6875rem; font-weight: 600; padding: 0 0 0 4px; vertical-align: baseline; }
+
+.empty {
+  margin: 0;
+  padding: 14px 4px;
+  color: var(--text-dim);
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+/* --- settings ------------------------------------------------------------- */
+
+.settings { font-size: 0.75rem; color: var(--text-dim); }
+
+.settings > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 2px 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Our own disclosure triangle, so it looks the same on both platforms. */
+.settings > summary::-webkit-details-marker { display: none; }
+
+.settings > summary::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 6px;
+  vertical-align: 1px;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 0.12s ease;
+}
+
+.settings[open] > summary::before { transform: rotate(90deg); }
+.settings > *:not(summary) { margin-top: 6px; }
+/* Bootstrap floats the box and hangs the label off a padded wrapper, which
+   leaves the two misaligned at this size. A flex row centres them and puts a
+   gap between. */
+.settings .form-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 0;
+  min-height: auto;
+  margin-bottom: 0;
+}
+
+.settings .form-check-input { float: none; flex: none; margin: 0; }
+.settings .form-check-label { margin: 0; }
+
+.path {
+  margin: 6px 0 0;
+  font-size: 0.6875rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.path .btn-link { font-size: 0.6875rem; padding: 0; vertical-align: baseline; }
