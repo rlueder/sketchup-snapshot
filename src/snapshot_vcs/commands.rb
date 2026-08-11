@@ -93,31 +93,6 @@ module SnapshotVCS
     # git binary to be missing, so these are all real problems worth showing.
     FAILURES = [RepoError, GitError, ObjectUnavailable, ArgumentError].freeze
 
-    # --- guards ------------------------------------------------------------
-
-    # Gate the actions that create new work. Everything that reads or recovers
-    # what the user already saved — history, restore, switching variations,
-    # renaming, removing — stays available whatever the licence says. Holding
-    # someone's own model history hostage would be indefensible, and is exactly
-    # the kind of thing the Warehouse's "must not damage user data" criterion
-    # exists to catch.
-    #
-    # @return [Boolean] true when the action may proceed
-    def entitled?(action)
-      return true if Licensing.licensed?
-
-      answer = UI.messagebox(
-        "Your Snapshot trial has ended, so #{action} is paused.\n\n" \
-        "Nothing is lost. Every snapshot you took is still listed, and you can " \
-        "still open any of them. The history is an ordinary git repository in " \
-        "the model's folder, so it is yours either way.\n\n" \
-        'Open the Extension Warehouse?',
-        MB_OKCANCEL
-      )
-      Licensing.open_store if answer == IDOK
-      false
-    end
-
     # Resolve the active model to a Repo, prompting to create one if needed.
     #
     # @return [Array(Sketchup::Model, Repo), nil]
@@ -164,8 +139,6 @@ module SnapshotVCS
     # @param message [String, nil] nil prompts the user
     # @return [Boolean]
     def snapshot(message = nil)
-      return false unless entitled?('taking new snapshots')
-
       # Nothing is typed into a native dialog any more. Asking from the toolbar
       # means opening the panel with the field focused, so there is one place a
       # snapshot is described and it looks the same however you got there.
@@ -329,8 +302,6 @@ module SnapshotVCS
 
     # @param name [String, nil] nil prompts the user
     def create_variation(name = nil)
-      return false unless entitled?('starting a new variation')
-
       ctx = context
       return false if ctx.nil?
 
@@ -479,7 +450,6 @@ module SnapshotVCS
         'auto_snapshot' => Settings.auto_snapshot?,
         'confirm_delete' => Settings.confirm_delete?,
         'suggested_variation' => nil,
-        'license' => Licensing.entitlement.to_h,
         'show_toolbar' => Settings.show_toolbar?,
         'snapshots' => [],
         'variations' => []
@@ -519,12 +489,7 @@ module SnapshotVCS
     def settle_pending_changes(model, repo, action:, auto_message:, allow_discard: true)
       pending = model.modified? || repo.dirty?
 
-      # Offering "snapshot them first" to someone whose trial has ended is a
-      # dead end: they would pick it, get the upgrade prompt, and end up back
-      # where they started. Ask the question they can actually answer.
-      if pending && !Licensing.licensed?
-        return false unless discard_only(action, allow_discard)
-      elsif pending && allow_discard
+      if pending && allow_discard
         answer = UI.messagebox(
           "You have changes that aren't in a snapshot yet.\n\n" \
           "Yes — snapshot them first, then continue\n" \
@@ -556,26 +521,6 @@ module SnapshotVCS
       end
 
       true
-    end
-
-    # The pending-changes question, minus the option that is unavailable.
-    def discard_only(action, allow_discard)
-      unless allow_discard
-        UI.messagebox(
-          "You have changes that aren't in a snapshot yet, and new snapshots " \
-          "are paused while your trial has ended.\n\nThose changes have to be " \
-          "snapshotted before #{action}, so this cannot continue."
-        )
-        return false
-      end
-
-      answer = UI.messagebox(
-        "You have changes that aren't in a snapshot yet, and new snapshots are " \
-        "paused while your trial has ended.\n\nThrow those changes away and " \
-        "continue #{action}?",
-        MB_OKCANCEL
-      )
-      answer == IDOK
     end
 
     def suggested_variation_name(repo)

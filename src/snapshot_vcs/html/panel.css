@@ -241,19 +241,6 @@ body {
   font-size: 0.75rem;
 }
 
-.trial {
-  margin: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--warn-border);
-  border-radius: var(--radius);
-  background: var(--warn-bg);
-  color: var(--warn-text);
-  font-size: 0.6875rem;
-}
-
-.trial.ended { border-color: var(--danger); }
-.trial .btn-link { font-size: 0.6875rem; font-weight: 600; padding: 0 0 0 4px; vertical-align: baseline; }
-
 .empty {
   margin: 0;
   padding: 14px 4px;

@@ -219,43 +219,6 @@ module Sketchup
     end
   end
 
-  # Extension Warehouse licensing. The real one talks to Trimble; this one is
-  # whatever the test says it is, including failing outright.
-  module Licensing
-    LICENSED = 0
-    EXPIRED = 1
-    TRIAL = 2
-    TRIAL_EXPIRED = 3
-    NOT_LICENSED = 4
-
-    class ExtensionLicense
-      attr_reader :state, :days_remaining
-
-      def initialize(state:, days_remaining: nil)
-        @state = state
-        @days_remaining = days_remaining
-      end
-
-      def licensed?
-        [LICENSED, TRIAL].include?(@state)
-      end
-    end
-
-    class << self
-      attr_accessor :stub
-
-      def reset!
-        @stub = nil
-      end
-
-      def get_extension_license(_extension_id)
-        raise 'licensing service unavailable' if @stub == :error
-
-        @stub || ExtensionLicense.new(state: LICENSED)
-      end
-    end
-  end
-
   class ModelObserver; end
   class AppObserver; end
 

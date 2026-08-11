@@ -245,10 +245,6 @@ module SnapshotVCS
           push(Commands.state)
         end
 
-        dialog.add_action_callback('su_buy') do |_ctx|
-          Licensing.open_store
-        end
-
         dialog.add_action_callback('su_reveal') do |_ctx|
           Commands.reveal_folder
         end

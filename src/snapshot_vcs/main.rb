@@ -13,7 +13,7 @@ module SnapshotVCS
       "This is SketchUp #{Sketchup.version.to_i + 2000}."
     )
   else
-    %w[log settings licensing git object_store repo model_io commands observers panel].each do |file|
+    %w[log settings git object_store repo model_io commands observers panel].each do |file|
       Sketchup.require(File.join(PLUGIN_DIR, file))
     end
 

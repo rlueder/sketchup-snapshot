@@ -181,11 +181,6 @@
     if (namingVariation) { bar.appendChild(variationNameField(state)); }
     box.appendChild(bar);
 
-    // A paying customer should never see licensing UI, so this only appears
-    // during a trial or once one has run out.
-    var trial = trialBadge(state.license);
-    if (trial) { box.appendChild(trial); }
-
     // Explain the idea only until they have used it.
     if (variations.length <= 1) {
       box.appendChild(el('p', 'hint',
@@ -231,26 +226,6 @@
       focusVariationField = false;
       pendingFocus = input;
     }
-    return box;
-  }
-
-  function trialBadge(license) {
-    if (!license) { return null; }
-    if (license.licensed && !license.trial) { return null; }
-
-    var box = el('p', 'trial' + (license.licensed ? '' : ' ended'));
-    if (license.trial) {
-      var days = license.days_remaining;
-      box.appendChild(document.createTextNode(
-        days === null || days === undefined
-          ? 'Trial'
-          : 'Trial — ' + days + (days === 1 ? ' day left' : ' days left')));
-    } else {
-      box.appendChild(document.createTextNode(
-        'Trial ended. Your snapshots are still here; new ones are paused.'));
-    }
-    box.appendChild(document.createTextNode(' '));
-    box.appendChild(button('Buy', 'btn btn-link btn-sm', function () { bridge('su_buy'); }));
     return box;
   }
 
