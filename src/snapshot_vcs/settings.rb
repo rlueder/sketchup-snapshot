@@ -12,7 +12,7 @@ module SnapshotVCS
     # Ask before taking a snapshot out of the history list.
     CONFIRM_DELETE = 'confirm_delete'
 
-    # Show the Snapshot toolbar. A custom toolbar is the usual pattern for a
+    # Show the Snapshots toolbar. A custom toolbar is the usual pattern for a
     # SketchUp extension, but on macOS it arrives as a small floating palette
     # that not everyone wants, and the panel does everything it does.
     SHOW_TOOLBAR = 'show_toolbar'
@@ -65,7 +65,9 @@ module SnapshotVCS
 
     def read(key, default)
       Sketchup.read_default(SECTION, key, default)
-    rescue StandardError
+    rescue StandardError => e
+      # Read on every UI tick by the menu validation, hence once.
+      Log.error_once("could not read the #{key} preference: #{e.class}: #{e.message}")
       default
     end
 

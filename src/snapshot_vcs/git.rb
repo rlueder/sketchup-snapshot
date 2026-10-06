@@ -108,7 +108,7 @@ module SnapshotVCS
             'restart SketchUp.'
         end
       else
-        "Git #{@version_string} is too old. Snapshot needs at least " \
+        "Git #{@version_string} is too old. Snapshots needs at least " \
           "#{MINIMUM_VERSION.join('.')}."
       end
     end
@@ -243,7 +243,11 @@ module SnapshotVCS
       # On macOS without Command Line Tools, /usr/bin/git is a shim that pops a
       # GUI installer and exits non-zero, so a zero exit here is meaningful.
       text.start_with?('git version') ? text : nil
-    rescue StandardError
+    rescue StandardError => e
+      # Nearly always "no such file": most candidates are places git might be,
+      # and finding out is what probing is for. Recorded so any other reason
+      # is visible. Runs once per process, since the result is cached.
+      Log.info("git probe #{candidate}: #{e.class}: #{e.message}")
       nil
     end
 

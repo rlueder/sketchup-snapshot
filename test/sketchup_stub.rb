@@ -136,13 +136,14 @@ module Sketchup
 
   class Model
     attr_accessor :path
-    attr_reader :observers, :closed
+    attr_reader :observers, :closed, :save_count, :closed_ignoring_changes
 
     def initialize(path = '')
       @path = path
       @modified = false
       @observers = []
       @closed = false
+      @save_count = 0
       @active_view = View.new
     end
 
@@ -157,6 +158,7 @@ module Sketchup
     end
 
     def save(target = nil)
+      @save_count += 1
       @path = target if target
       @modified = false
       @observers.each { |observer| observer.onSaveModel(self) if observer.respond_to?(:onSaveModel) }
@@ -173,8 +175,9 @@ module Sketchup
       true
     end
 
-    def close(_ignore_changes = false)
+    def close(ignore_changes = false)
       @closed = true
+      @closed_ignoring_changes = ignore_changes
       nil
     end
   end
@@ -396,9 +399,10 @@ module UI
     STYLE_WINDOW = 1
     STYLE_UTILITY = 2
 
-    attr_reader :callbacks, :scripts, :file, :html
+    attr_reader :callbacks, :scripts, :file, :html, :options
 
-    def initialize(_options = {})
+    def initialize(options = {})
+      @options = options
       @callbacks = {}
       @scripts = []
       @visible = false

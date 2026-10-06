@@ -103,7 +103,7 @@ module SnapshotVCS
       if path.nil?
         answer = UI.messagebox(
           "This model hasn't been saved yet.\n\n" \
-          "Snapshot keeps its history next to the .skp file, so save the " \
+          "Snapshots keeps its history next to the .skp file, so save the " \
           "model somewhere first.\n\nOpen Save As now?",
           MB_OKCANCEL
         )
@@ -159,7 +159,10 @@ module SnapshotVCS
         return false
       end
 
-      with_status('Snapshot: saving model…') do
+      # The one place this extension saves the model. Every route here has
+      # told the user so: the panel's button and hint, or the answer they
+      # picked in settle_pending_changes.
+      with_status('Snapshots: saving model…') do
         unless ModelIO.save(model)
           UI.messagebox("SketchUp could not save the model, so there is nothing to snapshot yet.")
           return false
@@ -167,7 +170,7 @@ module SnapshotVCS
       end
 
       begin
-        sha = with_status('Snapshot: recording…') { repo.snapshot!(message) }
+        sha = with_status('Snapshots: recording…') { repo.snapshot!(message) }
       rescue NothingToSnapshot
         Status.git_dirty = false
         Sketchup.status_text = 'Nothing has changed since the last snapshot.'
@@ -202,15 +205,19 @@ module SnapshotVCS
         return false
       end
 
-      return false unless settle_pending_changes(
+      pending = settle_pending_changes(
         model, repo,
         action: "going back to \"#{snap.subject}\"",
         auto_message: "Before restoring \"#{snap.subject}\""
       )
+      return false unless pending
 
       begin
-        moved = with_status("Snapshot: opening \"#{snap.subject}\"…") { repo.restore!(sha) }
+        moved = with_status("Snapshots: opening \"#{snap.subject}\"…") { repo.restore!(sha) }
       rescue *FAILURES => e
+        # Nothing was saved on the way here, so after a failure the open model
+        # still holds whatever the user had, including changes they had chosen
+        # to discard.
         report(e)
         return false
       end
@@ -224,7 +231,11 @@ module SnapshotVCS
       end
 
       Log.info("restored #{snap.short_sha}")
-      ModelIO.reload(repo.file_path, note: "Now showing \"#{snap.subject}\".")
+      ModelIO.reload(
+        repo.file_path,
+        note: "Now showing \"#{snap.subject}\".",
+        discard_changes: pending == :discard
+      )
       true
     end
 
@@ -351,7 +362,7 @@ module SnapshotVCS
       )
 
       begin
-        changed = with_status("Snapshot: opening #{label}…") { repo.switch_variation!(name) }
+        changed = with_status("Snapshots: opening #{label}…") { repo.switch_variation!(name) }
       rescue InvalidVariationName => e
         UI.messagebox(e.message)
         return false
@@ -482,45 +493,44 @@ module SnapshotVCS
 
     # --- helpers -----------------------------------------------------------
 
-    # Make sure nothing unsnapshotted is about to be destroyed, and leave the
-    # model clean on disk so it can be closed without SketchUp prompting.
+    # Make sure nothing unsnapshotted is destroyed without the user saying so.
     #
-    # @return [Boolean] false when the user cancelled
+    # The model is saved here only through #snapshot, and only after the user
+    # has picked an answer that says it saves. Choosing to discard writes
+    # nothing at all: the changes stay in the open model until the restore has
+    # succeeded, and ModelIO.reload then closes that model without saving it.
+    #
+    # @return [Symbol, false] :clean when nothing was pending or it has been
+    #   snapshotted, :discard when the user chose to throw the changes away,
+    #   false when they cancelled or the snapshot could not be taken
     def settle_pending_changes(model, repo, action:, auto_message:, allow_discard: true)
-      pending = model.modified? || repo.dirty?
+      return :clean unless model.modified? || repo.dirty?
 
-      if pending && allow_discard
+      if allow_discard
         answer = UI.messagebox(
           "You have changes that aren't in a snapshot yet.\n\n" \
-          "Yes — snapshot them first, then continue\n" \
-          "No — throw them away and continue #{action}\n" \
-          "Cancel — stay where I am",
+          "Yes: save the model and snapshot them first, then continue\n" \
+          "No: discard them and continue #{action}. The model is not " \
+          "saved, and the changes cannot be recovered\n" \
+          "Cancel: stay where I am",
           MB_YESNOCANCEL
         )
-        return false if answer == IDCANCEL
-        return false if answer == IDYES && !snapshot(auto_message)
-      elsif pending
+        return :discard if answer == IDNO
+        return false unless answer == IDYES
+      else
         # Opening another variation overwrites the model file with that variation's
         # version, so unsnapshotted work would simply vanish. Unlike a restore,
         # there is no discard path worth offering here.
         answer = UI.messagebox(
           "You have changes that aren't in a snapshot yet.\n\n" \
-          "They have to be snapshotted before #{action}.\n\nSnapshot them now?",
+          "They have to be snapshotted before #{action}, which saves the " \
+          "model to disk.\n\nSave the model and snapshot them now?",
           MB_OKCANCEL
         )
         return false unless answer == IDOK
-        return false unless snapshot(auto_message)
       end
 
-      # Even when discarding, write the model out first: a clean model closes
-      # without SketchUp asking about unsaved changes, and the file is
-      # overwritten from the history a moment later anyway.
-      if model.modified? && !ModelIO.save(model)
-        UI.messagebox('SketchUp could not save the model, so nothing was changed.')
-        return false
-      end
-
-      true
+      snapshot(auto_message) ? :clean : false
     end
 
     def suggested_variation_name(repo)
@@ -548,7 +558,7 @@ module SnapshotVCS
           error.message
         end
       Log.error(message)
-      UI.messagebox("Snapshot couldn't finish that:\n\n#{message}")
+      UI.messagebox("Snapshots couldn't finish that:\n\n#{message}")
       false
     end
   end

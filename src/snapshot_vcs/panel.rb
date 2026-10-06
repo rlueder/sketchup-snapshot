@@ -130,7 +130,7 @@ module SnapshotVCS
 
       def build_dialog
         dialog = UI::HtmlDialog.new(
-          dialog_title: "SketchUp Snapshots #{SnapshotVCS::VERSION}",
+          dialog_title: "#{SnapshotVCS::EXTENSION_NAME} #{SnapshotVCS::VERSION}",
           preferences_key: PREFERENCES_KEY,
           scrollable: true,
           resizable: true,

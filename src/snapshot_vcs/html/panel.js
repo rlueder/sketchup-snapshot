@@ -1,4 +1,4 @@
-/* Snapshot panel view.
+/* Snapshots panel view.
  *
  * Ruby owns all state. This file only draws whatever `SnapshotUI.render(state)`
  * is handed and forwards user intent back through the `sketchup` bridge.
@@ -249,13 +249,19 @@
 
     var row = el('div', 'field-row');
     row.appendChild(input);
-    row.appendChild(iconButton(CAMERA_SVG, 'Take a snapshot', 'btn btn-primary btn-sm', submit));
+    // Taking a snapshot saves the model, and the user has to know that before
+    // they press the button: the label says it, and so does the line below.
+    row.appendChild(iconButton(CAMERA_SVG, 'Save the model and take a snapshot',
+      'btn btn-primary btn-sm', submit));
     box.appendChild(row);
 
-    // One sentence covers both states. A pill next to the picker said the
-    // same thing in fewer, vaguer words.
+    // One line covers both states. A pill next to the picker said the same
+    // thing in fewer, vaguer words. Whenever a snapshot would write the model
+    // to disk the state is dirty, so this is where that gets said.
     if (state.dirty) {
-      box.appendChild(el('p', 'hint', 'You have changes that aren\u2019t in a snapshot yet.'));
+      box.appendChild(el('p', 'hint',
+        'You have changes that aren\u2019t in a snapshot yet. ' +
+        'Taking a snapshot saves the model to disk first.'));
     } else if ((state.snapshots || []).length) {
       box.appendChild(el('p', 'hint', 'Nothing has changed since your last snapshot.'));
     }
@@ -435,7 +441,7 @@
     box.appendChild(checkbox('Ask before removing a snapshot', state.confirm_delete !== false,
       function (checked) { bridge('su_set_confirm_delete', checked); }));
 
-    box.appendChild(checkbox('Show the Snapshot toolbar', state.show_toolbar !== false,
+    box.appendChild(checkbox('Show the Snapshots toolbar', state.show_toolbar !== false,
       function (checked) { bridge('su_set_show_toolbar', checked); }));
 
     if (state.root) {
@@ -470,14 +476,14 @@
     if (state.ok === false) {
       app.appendChild(headerEl);
       app.appendChild(notice(state.problem ||
-        'Snapshot could not read this model’s history.'));
+        'Snapshots could not read this model’s history.'));
       return;
     }
 
     if (!state.saved) {
       app.appendChild(headerEl);
       app.appendChild(notice(
-        'Save this model to a folder first — Snapshot keeps its history next to the .skp file.'));
+        'Save this model to a folder first — Snapshots keeps its history next to the .skp file.'));
       var section = el('div', 'section');
       section.appendChild(button('Save model as…', 'btn btn-primary btn-sm', function () {
         bridge('su_save_model');
@@ -489,7 +495,7 @@
     if (!state.tracked) {
       app.appendChild(headerEl);
       app.appendChild(notice(
-        'This model is not being tracked yet. Snapshot will create a local history folder next to it.'));
+        'This model is not being tracked yet. Snapshots will create a local history folder next to it.'));
       var start = el('div', 'section');
       start.appendChild(button('Start keeping snapshots', 'btn btn-primary btn-sm', function () {
         bridge('su_start_tracking');
