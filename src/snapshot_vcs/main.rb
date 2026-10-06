@@ -9,11 +9,11 @@ module SnapshotVCS
 
   if Sketchup.version.to_i < MINIMUM_SKETCHUP
     UI.messagebox(
-      "Snapshot needs SketchUp #{2000 + MINIMUM_SKETCHUP} or newer. " \
+      "Snapshots needs SketchUp #{2000 + MINIMUM_SKETCHUP} or newer. " \
       "This is SketchUp #{Sketchup.version.to_i + 2000}."
     )
   else
-    %w[log settings licensing git object_store repo model_io commands observers panel].each do |file|
+    %w[log settings git object_store repo model_io commands observers panel].each do |file|
       Sketchup.require(File.join(PLUGIN_DIR, file))
     end
 
@@ -27,10 +27,22 @@ module SnapshotVCS
       File.join(ICONS_DIR, "#{name}.png")
     end
 
+    # Checked/unchecked state for a menu item or toolbar button.
+    #
+    # Validation procs run on every UI tick, so an exception must not escape
+    # one. It is not swallowed either: the failure goes to the log, once per
+    # distinct message rather than once per tick.
+    def self.check_state(label)
+      (yield) ? MF_CHECKED : MF_UNCHECKED
+    rescue StandardError => e
+      Log.error_once("#{label}: #{e.class}: #{e.message}")
+      MF_UNCHECKED
+    end
+
     def self.build_commands
       snapshot = UI::Command.new('Take Snapshot') { Commands.snapshot }
       snapshot.tooltip = 'Take Snapshot'
-      snapshot.status_bar_text = 'Save the current state of this model so you can come back to it.'
+      snapshot.status_bar_text = 'Save this model and record its current state so you can come back to it.'
       snapshot.menu_text = 'Take Snapshot…'
       snapshot.small_icon = icon('snapshot')
       snapshot.large_icon = icon('snapshot')
@@ -38,27 +50,15 @@ module SnapshotVCS
       # dirty indicator is expressed as the button's checked (highlighted)
       # state. Deliberately never MF_GRAYED: the button must stay clickable for
       # a model that has no history yet.
-      snapshot.set_validation_proc do
-        begin
-          Status.dirty? ? MF_CHECKED : MF_UNCHECKED
-        rescue StandardError
-          MF_UNCHECKED
-        end
-      end
+      snapshot.set_validation_proc { check_state('dirty indicator') { Status.dirty? } }
 
       history = UI::Command.new('Snapshots') { Panel.toggle }
-      history.tooltip = 'SketchUp Snapshots'
+      history.tooltip = 'Snapshots'
       history.status_bar_text = 'Show or hide the Snapshots panel.'
       history.menu_text = 'Snapshots…'
       history.small_icon = icon('snapshot')
       history.large_icon = icon('snapshot')
-      history.set_validation_proc do
-        begin
-          Panel.visible? ? MF_CHECKED : MF_UNCHECKED
-        rescue StandardError
-          MF_UNCHECKED
-        end
-      end
+      history.set_validation_proc { check_state('panel toggle') { Panel.visible? } }
 
       new_variation = UI::Command.new('New Variation') { Commands.create_variation }
       new_variation.menu_text = 'New Variation…'
@@ -67,13 +67,7 @@ module SnapshotVCS
       auto = UI::Command.new('Snapshot on Save') { Commands.toggle_auto_snapshot }
       auto.menu_text = 'Snapshot Every Save'
       auto.status_bar_text = 'Automatically take a snapshot each time you save this model.'
-      auto.set_validation_proc do
-        begin
-          Settings.auto_snapshot? ? MF_CHECKED : MF_UNCHECKED
-        rescue StandardError
-          MF_UNCHECKED
-        end
-      end
+      auto.set_validation_proc { check_state('auto-snapshot toggle') { Settings.auto_snapshot? } }
 
       reveal = UI::Command.new('Open History Folder') { Commands.reveal_folder }
       reveal.menu_text = 'Open History Folder'
@@ -97,7 +91,7 @@ module SnapshotVCS
     def self.build_ui
       commands = build_commands
 
-      menu = UI.menu('Extensions').add_submenu('Snapshot')
+      menu = UI.menu('Extensions').add_submenu('Snapshots')
       menu.add_item(commands[:snapshot])
       menu.add_item(commands[:history])
       menu.add_separator
@@ -110,7 +104,7 @@ module SnapshotVCS
       # lives in the panel, so a toolbar that could fire one would be a second
       # way to do the same thing — and the camera means "take a snapshot"
       # inside the panel, so it would mean two things at once out here.
-      toolbar = UI::Toolbar.new('Snapshot')
+      toolbar = UI::Toolbar.new('Snapshots')
       toolbar.add_item(commands[:history])
 
       # Read this before restore(), which is what sets it.

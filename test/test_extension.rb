@@ -4,6 +4,7 @@
 # wiring, the prompt flow, the save/close/reopen cycle, and the observers.
 
 require 'minitest/autorun'
+require 'minitest/mock'
 require 'fileutils'
 require 'tmpdir'
 
@@ -76,6 +77,76 @@ class TestExtensionLoading < ExtensionTest
     assert SnapshotVCS.respond_to?(:build_commands)
     commands = SnapshotVCS.build_commands
     assert_equal %i[snapshot history new_variation auto reveal].sort, commands.keys.sort
+  end
+
+  # Extension Warehouse rejects anything that reads as an official SketchUp
+  # product, and the name has to be the same one everywhere the user sees it.
+  def test_the_name_is_the_same_everywhere_and_never_leads_with_sketchup
+    toolbar = SnapshotVCS.instance_variable_get(:@toolbar)
+    title = Panel.dialog.options[:dialog_title]
+
+    assert_equal 'Snapshots', SnapshotVCS.extension.name
+    assert_equal 'Snapshots', toolbar.name
+    assert_equal 'Snapshots', toolbar.items.first.tooltip
+    assert_equal "Snapshots #{SnapshotVCS::VERSION}", title
+
+    [SnapshotVCS.extension.name, toolbar.name, toolbar.items.first.tooltip, title].each do |text|
+      refute_match(/\ASketchUp/i, text)
+    end
+  ensure
+    Panel.close
+  end
+
+  def test_the_copyright_year_does_not_follow_the_clock
+    loader = File.read(File.join(SnapshotVCS::PLUGIN_ROOT, 'snapshot_vcs.rb'))
+
+    assert_equal '© 2026 Rafael Lueder, MIT licensed', SnapshotVCS.extension.copyright
+    refute_includes loader, 'Time.now'
+  end
+end
+
+# Extension Warehouse asks that an error is never rescued without a trace.
+class TestFailuresLeaveATrace < ExtensionTest
+  def setup
+    super
+    Log.history.clear
+    Log.reported.clear
+  end
+
+  def test_a_failing_menu_check_is_logged_once_not_once_per_tick
+    3.times do
+      assert_equal MF_UNCHECKED, SnapshotVCS.check_state('dirty indicator') { raise 'boom' }
+    end
+
+    assert_equal 1, Log.history.grep(/dirty indicator: RuntimeError: boom/).length
+  end
+
+  def test_menu_checks_still_report_their_state
+    assert_equal MF_CHECKED, SnapshotVCS.check_state('x') { true }
+    assert_equal MF_UNCHECKED, SnapshotVCS.check_state('x') { false }
+    assert_empty Log.history
+  end
+
+  def test_a_preference_that_cannot_be_read_falls_back_and_says_so
+    failing = ->(*) { raise IOError, 'registry unavailable' }
+
+    Sketchup.stub(:read_default, failing) do
+      refute Settings.auto_snapshot?
+      assert Settings.confirm_delete?
+    end
+
+    assert_equal 1, Log.history.grep(/auto_snapshot preference: IOError: registry unavailable/).length
+  end
+
+  def test_a_model_that_refuses_to_let_go_of_its_observer_is_recorded
+    def model.remove_observer(_observer)
+      raise 'model already closed'
+    end
+
+    Observers.detach
+
+    refute Observers.watching?(model)
+    assert_equal 1, Log.history.grep(/detach observer: RuntimeError: model already closed/).length
   end
 end
 
@@ -230,6 +301,7 @@ class TestRestoreCommand < ExtensionTest
   end
 
   def test_pending_work_can_be_discarded
+    original = model
     model.modified = true
     File.binwrite(@path, 'skp-wip')
     SketchupStub.queue_messagebox(IDNO)
@@ -239,6 +311,81 @@ class TestRestoreCommand < ExtensionTest
 
     refute_includes repo.history.map(&:subject), 'Before restoring "one"'
     assert_equal 'skp-v1', File.binread(@path)
+    # Thrown away means thrown away: the model is closed without being saved.
+    assert_equal 0, original.save_count, 'discarded work must never be written to disk'
+    assert original.closed
+    assert_equal true, original.closed_ignoring_changes
+    assert_equal [@path], SketchupStub.opened_files
+  end
+
+  # The case Extension Warehouse rejected 1.0.0 for: the user says "throw
+  # them away", the restore then fails, and the discarded work has already
+  # been saved over their file.
+  def test_a_restore_that_fails_after_discarding_has_saved_nothing
+    model.modified = true
+    broken = repo
+    def broken.restore!(_sha)
+      raise SnapshotVCS::RepoError, 'the history folder went away'
+    end
+    SketchupStub.queue_messagebox(IDNO) # discard
+    SketchupStub.queue_messagebox(IDOK) # the failure report
+
+    Repo.stub(:discover, broken) do
+      refute Commands.restore(@first)
+      SketchupStub.run_timers!
+    end
+
+    assert_equal 0, model.save_count
+    assert model.modified?, 'the changes are still in the open model'
+    refute model.closed
+    assert_equal 'skp-v2', File.binread(@path), 'the file on disk is untouched'
+    assert_empty SketchupStub.opened_files
+    assert(SketchupStub.prompts.any? { |text| text.include?('the history folder went away') })
+  end
+
+  def test_the_prompt_says_which_answer_saves_the_model
+    model.modified = true
+    SketchupStub.queue_messagebox(IDCANCEL)
+
+    refute Commands.restore(@first)
+
+    prompt = SketchupStub.prompts.last
+    assert_match(/Yes: save the model and snapshot them first/, prompt)
+    assert_match(/No: discard them .* The model is not saved/, prompt)
+    assert_equal 0, model.save_count
+  end
+
+  def test_choosing_to_snapshot_first_saves_exactly_once
+    original = model
+    model.modified = true
+    File.binwrite(@path, 'skp-wip')
+    SketchupStub.queue_messagebox(IDYES)
+
+    assert Commands.restore(@first)
+    SketchupStub.run_timers!
+
+    assert_equal 1, original.save_count
+  end
+
+  def test_restoring_a_clean_model_never_saves_it
+    original = model
+
+    assert Commands.restore(@first)
+    SketchupStub.run_timers!
+
+    assert_equal 0, original.save_count
+  end
+
+  def test_a_modified_model_is_not_closed_unless_the_user_chose_to_discard
+    model.modified = true
+    SketchupStub.queue_messagebox(IDOK) # "reopen the file to see it"
+
+    ModelIO.reload(@path)
+    SketchupStub.run_timers!
+
+    refute model.closed
+    assert_equal 0, model.save_count
+    assert_empty SketchupStub.opened_files
   end
 
   def test_cancelling_leaves_everything_alone
@@ -325,6 +472,7 @@ class TestVariationCommands < ExtensionTest
     SketchupStub.run_timers!
 
     assert(SketchupStub.prompts.any? { |text| text.include?('have to be snapshotted') })
+    assert(SketchupStub.prompts.any? { |text| text.include?('saves the model to disk') })
   end
 
   def test_cancelling_the_switch_leaves_the_option_alone
@@ -596,135 +744,6 @@ class TestToolbarPreference < ExtensionTest
   end
 end
 
-# Entitlement, as reported by Extension Warehouse. The trial itself is
-# Trimble's; these cover how the plugin reacts to each answer.
-class TestLicensing < ExtensionTest
-  def setup
-    super
-    Sketchup::Licensing.reset!
-    Licensing.reset!
-    Licensing.extension_id = 'test-uuid'
-    accept_tracking
-    Commands.snapshot('base')
-    @first = repo.history.first.sha
-    File.binwrite(@path, 'skp-v2')
-    Commands.snapshot('second')
-  end
-
-  def teardown
-    Licensing.reset!
-    Sketchup::Licensing.reset!
-    super
-  end
-
-  def license(state, days: nil)
-    Sketchup::Licensing.stub =
-      Sketchup::Licensing::ExtensionLicense.new(state: state, days_remaining: days)
-  end
-
-  def test_an_unlisted_build_is_never_gated
-    # No Extension Warehouse id means a source build or development: there is
-    # nothing to ask about, so nothing is restricted.
-    Licensing.extension_id = ''
-    license(Sketchup::Licensing::TRIAL_EXPIRED)
-
-    File.binwrite(@path, 'skp-v3')
-    assert Commands.snapshot('still fine')
-  end
-
-  def test_a_trial_can_do_everything
-    license(Sketchup::Licensing::TRIAL, days: 12)
-
-    File.binwrite(@path, 'skp-v3')
-    assert Commands.snapshot('during trial')
-    assert Commands.create_variation('Flat roof')
-    assert_empty SketchupStub.prompts.grep(/trial has ended/)
-  end
-
-  def test_an_expired_trial_pauses_new_snapshots
-    license(Sketchup::Licensing::TRIAL_EXPIRED)
-    SketchupStub.queue_messagebox(IDCANCEL)
-
-    File.binwrite(@path, 'skp-v3')
-    refute Commands.snapshot('after trial')
-
-    assert(SketchupStub.prompts.any? { |t| t.include?('trial has ended') })
-    assert_equal %w[second base], repo.history.map(&:subject)
-  end
-
-  def test_an_expired_trial_still_lets_you_reach_your_own_work
-    license(Sketchup::Licensing::TRIAL_EXPIRED)
-
-    # Nothing that reads or recovers existing work may be blocked. The
-    # pending-changes question drops the option the gate would refuse.
-    File.binwrite(@path, 'skp-v3')
-    Sketchup.active_model.modified = false
-    SketchupStub.queue_messagebox(IDOK) # throw the unsnapshotted changes away
-    assert Commands.restore(@first)
-    SketchupStub.run_timers!
-    assert_equal 'skp-v1', File.binread(@path)
-
-    assert Commands.rename_snapshot(@first, 'Renamed after expiry')
-    refute_empty Commands.state['snapshots']
-  end
-
-  def test_the_dead_end_option_is_not_offered_once_the_trial_ends
-    license(Sketchup::Licensing::TRIAL_EXPIRED)
-    File.binwrite(@path, 'skp-v3')
-    SketchupStub.queue_messagebox(IDCANCEL)
-
-    refute Commands.restore(@first)
-
-    prompt = SketchupStub.prompts.last
-    assert_includes prompt, 'Throw those changes away'
-    refute_includes prompt, 'snapshot them first'
-  end
-
-  def test_the_upgrade_prompt_opens_the_store
-    license(Sketchup::Licensing::NOT_LICENSED)
-    SketchupStub.queue_messagebox(IDOK)
-
-    File.binwrite(@path, 'skp-v3')
-    refute Commands.snapshot('nope')
-
-    assert_includes SketchupStub.urls, SnapshotVCS::Licensing::STORE_URL
-  end
-
-  def test_a_failing_licence_check_fails_open
-    # A network hiccup must never stop a paying customer working.
-    Sketchup::Licensing.stub = :error
-
-    File.binwrite(@path, 'skp-v3')
-    assert Commands.snapshot('offline'), 'a failed check must not block work'
-  end
-
-  def test_state_reports_trial_days_to_the_panel
-    license(Sketchup::Licensing::TRIAL, days: 9)
-
-    info = Commands.state['license']
-    assert info['licensed']
-    assert info['trial']
-    assert_equal 9, info['days_remaining']
-    assert_equal 'trial', info['state']
-  end
-
-  def test_a_bought_licence_reports_nothing_worth_showing
-    license(Sketchup::Licensing::LICENSED)
-
-    info = Commands.state['license']
-    assert info['licensed']
-    refute info['trial'], 'a paying customer should never see licensing UI'
-  end
-
-  def test_creating_a_variation_is_gated_too
-    license(Sketchup::Licensing::EXPIRED)
-    SketchupStub.queue_messagebox(IDCANCEL)
-
-    refute Commands.create_variation('Flat roof')
-    assert_equal ['Original'], repo.variations.map(&:name)
-  end
-end
-
 class TestObserverAttachment < ExtensionTest
   def test_attaching_the_same_model_twice_does_not_double_up
     model = Sketchup::Model.new(@path)
@@ -908,6 +927,13 @@ class TestPanelSource < ExtensionTest
     assert has?('Nothing has changed since your last snapshot.'), 'the clean state'
     assert has?('changes that aren'), 'the dirty state'
     refute has?("'state-badge'"), 'the pill is gone'
+  end
+
+  # A snapshot writes the model to disk, and the user has to be told before
+  # they press the button rather than find out afterwards.
+  def test_the_panel_says_that_a_snapshot_saves_the_model
+    assert has?("'Save the model and take a snapshot'"), 'the button label'
+    assert has?('Taking a snapshot saves the model to disk first.'), 'the line under it'
   end
 
   def test_naming_a_variation_does_not_round_trip_through_ruby
