@@ -82,7 +82,7 @@ module SnapshotVCS
     MAX_WALK = 10_000
 
     GITIGNORE_LINES = [
-      '# Added by Snapshot for SketchUp',
+      '# Added by Snapshots for SketchUp',
       '*.skb',            # SketchUp's own rolling backup
       'AutoSave_*.skp',   # SketchUp's crash-recovery autosave
       '~$*',
@@ -92,7 +92,7 @@ module SnapshotVCS
     ].freeze
 
     GITATTRIBUTES_LINES = [
-      '# Added by Snapshot for SketchUp',
+      '# Added by Snapshots for SketchUp',
       '*.skp binary',
       '*.skb binary',
       '*.layout binary'
@@ -133,7 +133,7 @@ module SnapshotVCS
         # keeps its own history under refs/snapshots instead.
         File.write(File.join(git_dir, 'HEAD'), "ref: refs/heads/main\n")
         File.write(File.join(git_dir, 'description'),
-                   "SketchUp model history, kept by the Snapshot extension.\n")
+                   "SketchUp model history, kept by the Snapshots extension.\n")
         File.write(File.join(git_dir, 'config'), <<~CONFIG)
           [core]
           \trepositoryformatversion = 0
@@ -141,7 +141,7 @@ module SnapshotVCS
           \tbare = false
           \tlogallrefupdates = true
           [gc]
-          \t# Snapshot reads loose objects directly and cannot read packfiles.
+          \t# Snapshots reads loose objects directly and cannot read packfiles.
           \t# Running `git gc` by hand is still fine as long as git stays
           \t# installed; this only stops it happening behind your back.
           \tauto = 0
@@ -935,7 +935,10 @@ module SnapshotVCS
         return found.strip.gsub(/\A"|"\z/, '') unless found.nil?
       end
       nil
-    rescue StandardError
+    rescue StandardError => e
+      # The commit falls back to a generic identity. Worth a trace, because
+      # getting here means ~/.gitconfig exists and could not be read.
+      Log.error_once("could not read ~/.gitconfig: #{e.class}: #{e.message}")
       nil
     end
 

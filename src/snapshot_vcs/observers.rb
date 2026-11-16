@@ -86,8 +86,10 @@ module SnapshotVCS
         return if @watched.nil?
 
         @watched.remove_observer(@watcher)
-      rescue StandardError
-        nil # the model may already be gone, which is fine
+      rescue StandardError => e
+        # Usually the model is already gone, which is fine. Recorded anyway,
+        # so that anything else it turns out to be is not hidden.
+        Log.info("detach observer: #{e.class}: #{e.message}")
       ensure
         @watched = nil
         @watcher = nil

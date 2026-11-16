@@ -1,4 +1,4 @@
-# Snapshot for SketchUp
+# Snapshots for SketchUp
 
 Named save points for `.skp` files, and parallel variations for exploring
 competing ideas — without relying on the linear undo stack, and without
@@ -31,19 +31,26 @@ In SketchUp: **Extensions → Extension Manager → Install Extension**, pick th
 
 Save your model to a folder first — the history lives next to the `.skp`.
 
-Open **Extensions → Snapshot → Snapshots…**, or use the toolbar. The panel opens
+Open **Extensions → Snapshots → Snapshots…**, or use the toolbar. The panel opens
 by itself the first time.
 
 | | |
 | --- | --- |
-| Take a snapshot | Type what changed, hit **Snapshot**. |
+| Take a snapshot | Type what changed, hit the camera button. This saves the model first. |
 | Go back | Click any entry. The list stays put; the marker moves. |
 | Rename | Double-click a description. |
 | Remove | **Remove** on the row. It leaves the list, not the disk. |
 | New variation | The picker at the top of the panel. |
 
-If you have unsnapshotted work when you go back, you are asked whether to keep
-it or throw it away before anything happens.
+The model is only ever saved when you take a snapshot, and the panel says so
+next to the button. Nothing else writes your `.skp` behind your back.
+
+If you have unsnapshotted work when you go back, you are asked first:
+
+- **Yes** saves the model and snapshots that work, then goes back.
+- **No** discards it. The model is closed without being saved, and if going
+  back fails for any reason the work is still there in the open model.
+- **Cancel** leaves everything as it is.
 
 ## What it does to your folder
 
@@ -63,13 +70,13 @@ git log --all
 git cat-file blob <sha>:House.skp    # recover a model by hand
 ```
 
-Snapshot keeps its history under `refs/snapshots/*` and never touches `HEAD`,
+Snapshots keeps its history under `refs/snapshots/*` and never touches `HEAD`,
 the index, or any other file — so if the model already sits in a repository of
 yours, your branches and staged changes carry on untouched. Existing git
 history for the model shows up in the panel.
 
 If you do have git installed, it is used for exactly one thing: reading history
-back after someone runs `git gc`, which packs the loose objects Snapshot
+back after someone runs `git gc`, which packs the loose objects Snapshots
 writes.
 
 ## Limitations

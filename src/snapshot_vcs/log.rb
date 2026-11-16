@@ -24,13 +24,28 @@ module SnapshotVCS
         record('ERROR', message)
       end
 
+      # For code that runs on every UI tick (menu validation, preference
+      # reads): a failure there is recorded the first time it is seen, so it
+      # leaves a trace without pushing everything else out of the history.
+      def error_once(message)
+        return nil if reported.include?(message)
+
+        reported << message
+        reported.shift while reported.length > MAX_HISTORY
+        error(message)
+      end
+
+      def reported
+        @reported ||= []
+      end
+
       def record(level, message)
         entry = "#{Time.now.strftime('%H:%M:%S')} #{level} #{message}"
         history << entry
         history.shift while history.length > MAX_HISTORY
         # Published extensions must not write to the console uninvited; this
         # only speaks when a developer has explicitly asked it to.
-        puts "[Snapshot] #{level} #{message}" if verbose
+        puts "[Snapshots] #{level} #{message}" if verbose
         entry
       end
     end

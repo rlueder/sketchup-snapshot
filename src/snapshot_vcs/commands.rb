@@ -93,31 +93,6 @@ module SnapshotVCS
     # git binary to be missing, so these are all real problems worth showing.
     FAILURES = [RepoError, GitError, ObjectUnavailable, ArgumentError].freeze
 
-    # --- guards ------------------------------------------------------------
-
-    # Gate the actions that create new work. Everything that reads or recovers
-    # what the user already saved — history, restore, switching variations,
-    # renaming, removing — stays available whatever the licence says. Holding
-    # someone's own model history hostage would be indefensible, and is exactly
-    # the kind of thing the Warehouse's "must not damage user data" criterion
-    # exists to catch.
-    #
-    # @return [Boolean] true when the action may proceed
-    def entitled?(action)
-      return true if Licensing.licensed?
-
-      answer = UI.messagebox(
-        "Your Snapshot trial has ended, so #{action} is paused.\n\n" \
-        "Nothing is lost. Every snapshot you took is still listed, and you can " \
-        "still open any of them. The history is an ordinary git repository in " \
-        "the model's folder, so it is yours either way.\n\n" \
-        'Open the Extension Warehouse?',
-        MB_OKCANCEL
-      )
-      Licensing.open_store if answer == IDOK
-      false
-    end
-
     # Resolve the active model to a Repo, prompting to create one if needed.
     #
     # @return [Array(Sketchup::Model, Repo), nil]
@@ -128,7 +103,7 @@ module SnapshotVCS
       if path.nil?
         answer = UI.messagebox(
           "This model hasn't been saved yet.\n\n" \
-          "Snapshot keeps its history next to the .skp file, so save the " \
+          "Snapshots keeps its history next to the .skp file, so save the " \
           "model somewhere first.\n\nOpen Save As now?",
           MB_OKCANCEL
         )
@@ -164,8 +139,6 @@ module SnapshotVCS
     # @param message [String, nil] nil prompts the user
     # @return [Boolean]
     def snapshot(message = nil)
-      return false unless entitled?('taking new snapshots')
-
       # Nothing is typed into a native dialog any more. Asking from the toolbar
       # means opening the panel with the field focused, so there is one place a
       # snapshot is described and it looks the same however you got there.
@@ -186,7 +159,10 @@ module SnapshotVCS
         return false
       end
 
-      with_status('Snapshot: saving model…') do
+      # The one place this extension saves the model. Every route here has
+      # told the user so: the panel's button and hint, or the answer they
+      # picked in settle_pending_changes.
+      with_status('Snapshots: saving model…') do
         unless ModelIO.save(model)
           UI.messagebox("SketchUp could not save the model, so there is nothing to snapshot yet.")
           return false
@@ -194,7 +170,7 @@ module SnapshotVCS
       end
 
       begin
-        sha = with_status('Snapshot: recording…') { repo.snapshot!(message) }
+        sha = with_status('Snapshots: recording…') { repo.snapshot!(message) }
       rescue NothingToSnapshot
         Status.git_dirty = false
         Sketchup.status_text = 'Nothing has changed since the last snapshot.'
@@ -229,15 +205,19 @@ module SnapshotVCS
         return false
       end
 
-      return false unless settle_pending_changes(
+      pending = settle_pending_changes(
         model, repo,
         action: "going back to \"#{snap.subject}\"",
         auto_message: "Before restoring \"#{snap.subject}\""
       )
+      return false unless pending
 
       begin
-        moved = with_status("Snapshot: opening \"#{snap.subject}\"…") { repo.restore!(sha) }
+        moved = with_status("Snapshots: opening \"#{snap.subject}\"…") { repo.restore!(sha) }
       rescue *FAILURES => e
+        # Nothing was saved on the way here, so after a failure the open model
+        # still holds whatever the user had, including changes they had chosen
+        # to discard.
         report(e)
         return false
       end
@@ -251,7 +231,11 @@ module SnapshotVCS
       end
 
       Log.info("restored #{snap.short_sha}")
-      ModelIO.reload(repo.file_path, note: "Now showing \"#{snap.subject}\".")
+      ModelIO.reload(
+        repo.file_path,
+        note: "Now showing \"#{snap.subject}\".",
+        discard_changes: pending == :discard
+      )
       true
     end
 
@@ -329,8 +313,6 @@ module SnapshotVCS
 
     # @param name [String, nil] nil prompts the user
     def create_variation(name = nil)
-      return false unless entitled?('starting a new variation')
-
       ctx = context
       return false if ctx.nil?
 
@@ -380,7 +362,7 @@ module SnapshotVCS
       )
 
       begin
-        changed = with_status("Snapshot: opening #{label}…") { repo.switch_variation!(name) }
+        changed = with_status("Snapshots: opening #{label}…") { repo.switch_variation!(name) }
       rescue InvalidVariationName => e
         UI.messagebox(e.message)
         return false
@@ -479,7 +461,6 @@ module SnapshotVCS
         'auto_snapshot' => Settings.auto_snapshot?,
         'confirm_delete' => Settings.confirm_delete?,
         'suggested_variation' => nil,
-        'license' => Licensing.entitlement.to_h,
         'show_toolbar' => Settings.show_toolbar?,
         'snapshots' => [],
         'variations' => []
@@ -512,70 +493,44 @@ module SnapshotVCS
 
     # --- helpers -----------------------------------------------------------
 
-    # Make sure nothing unsnapshotted is about to be destroyed, and leave the
-    # model clean on disk so it can be closed without SketchUp prompting.
+    # Make sure nothing unsnapshotted is destroyed without the user saying so.
     #
-    # @return [Boolean] false when the user cancelled
+    # The model is saved here only through #snapshot, and only after the user
+    # has picked an answer that says it saves. Choosing to discard writes
+    # nothing at all: the changes stay in the open model until the restore has
+    # succeeded, and ModelIO.reload then closes that model without saving it.
+    #
+    # @return [Symbol, false] :clean when nothing was pending or it has been
+    #   snapshotted, :discard when the user chose to throw the changes away,
+    #   false when they cancelled or the snapshot could not be taken
     def settle_pending_changes(model, repo, action:, auto_message:, allow_discard: true)
-      pending = model.modified? || repo.dirty?
+      return :clean unless model.modified? || repo.dirty?
 
-      # Offering "snapshot them first" to someone whose trial has ended is a
-      # dead end: they would pick it, get the upgrade prompt, and end up back
-      # where they started. Ask the question they can actually answer.
-      if pending && !Licensing.licensed?
-        return false unless discard_only(action, allow_discard)
-      elsif pending && allow_discard
+      if allow_discard
         answer = UI.messagebox(
           "You have changes that aren't in a snapshot yet.\n\n" \
-          "Yes — snapshot them first, then continue\n" \
-          "No — throw them away and continue #{action}\n" \
-          "Cancel — stay where I am",
+          "Yes: save the model and snapshot them first, then continue\n" \
+          "No: discard them and continue #{action}. The model is not " \
+          "saved, and the changes cannot be recovered\n" \
+          "Cancel: stay where I am",
           MB_YESNOCANCEL
         )
-        return false if answer == IDCANCEL
-        return false if answer == IDYES && !snapshot(auto_message)
-      elsif pending
+        return :discard if answer == IDNO
+        return false unless answer == IDYES
+      else
         # Opening another variation overwrites the model file with that variation's
         # version, so unsnapshotted work would simply vanish. Unlike a restore,
         # there is no discard path worth offering here.
         answer = UI.messagebox(
           "You have changes that aren't in a snapshot yet.\n\n" \
-          "They have to be snapshotted before #{action}.\n\nSnapshot them now?",
+          "They have to be snapshotted before #{action}, which saves the " \
+          "model to disk.\n\nSave the model and snapshot them now?",
           MB_OKCANCEL
         )
         return false unless answer == IDOK
-        return false unless snapshot(auto_message)
       end
 
-      # Even when discarding, write the model out first: a clean model closes
-      # without SketchUp asking about unsaved changes, and the file is
-      # overwritten from the history a moment later anyway.
-      if model.modified? && !ModelIO.save(model)
-        UI.messagebox('SketchUp could not save the model, so nothing was changed.')
-        return false
-      end
-
-      true
-    end
-
-    # The pending-changes question, minus the option that is unavailable.
-    def discard_only(action, allow_discard)
-      unless allow_discard
-        UI.messagebox(
-          "You have changes that aren't in a snapshot yet, and new snapshots " \
-          "are paused while your trial has ended.\n\nThose changes have to be " \
-          "snapshotted before #{action}, so this cannot continue."
-        )
-        return false
-      end
-
-      answer = UI.messagebox(
-        "You have changes that aren't in a snapshot yet, and new snapshots are " \
-        "paused while your trial has ended.\n\nThrow those changes away and " \
-        "continue #{action}?",
-        MB_OKCANCEL
-      )
-      answer == IDOK
+      snapshot(auto_message) ? :clean : false
     end
 
     def suggested_variation_name(repo)
@@ -603,7 +558,7 @@ module SnapshotVCS
           error.message
         end
       Log.error(message)
-      UI.messagebox("Snapshot couldn't finish that:\n\n#{message}")
+      UI.messagebox("Snapshots couldn't finish that:\n\n#{message}")
       false
     end
   end

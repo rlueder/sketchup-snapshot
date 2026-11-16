@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 #
-# Snapshot for SketchUp — local version control for .skp files.
+# Snapshots for SketchUp — local version control for .skp files.
 #
 # This file is the extension registrar. SketchUp loads every .rb directly
 # inside its Plugins folder at startup, so this file must stay tiny and must
@@ -14,7 +14,8 @@ module SnapshotVCS
   PLUGIN_ROOT = File.expand_path(File.dirname(__FILE__)).freeze
   PLUGIN_DIR  = File.join(PLUGIN_ROOT, 'snapshot_vcs').freeze
 
-  EXTENSION_NAME = 'Snapshot'
+  # Matches the Extension Warehouse listing title exactly.
+  EXTENSION_NAME = 'Snapshots'
   VERSION = '1.0.0'
 
   unless defined?(@extension)
@@ -24,7 +25,9 @@ module SnapshotVCS
     )
     @extension.version = VERSION
     @extension.creator = 'Rafael Lueder'
-    @extension.copyright = "© #{Time.now.year} Rafael Lueder — MIT licensed"
+    # The year is fixed on purpose: a year computed at load time would change
+    # under the user and say nothing about which release they are running.
+    @extension.copyright = '© 2026 Rafael Lueder, MIT licensed'
     @extension.description =
       'Save named snapshots of your model and jump back to any of them. ' \
       'Explore competing ideas as parallel variations. Nothing to install ' \

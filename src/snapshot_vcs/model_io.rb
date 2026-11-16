@@ -6,13 +6,18 @@ module SnapshotVCS
   # This is the part the spec calls the trickiest UX bit, so the reasoning is
   # spelled out here rather than in a commit message.
   #
-  # The "discard unsaved changes" prompt appears because SketchUp asks about
-  # the dirty flag when a model closes. Rather than trying to suppress the
-  # prompt, we make it impossible for it to fire: the model is always saved to
-  # disk *before* git touches the file, so by the time we close, the model is
-  # clean as far as SketchUp is concerned. Whether the user keeps or discards
-  # that saved state is decided one level up, in Commands, where they are asked
-  # in plain language.
+  # The rule: the model is never saved unless the user asked for it. The only
+  # caller of #save is Commands.snapshot, and every way into that tells the
+  # user it saves the model (the panel's snapshot button and hint, and the
+  # "save the model and snapshot" answer in the pending-changes prompt).
+  #
+  # Restoring needs the open model closed. A clean model closes silently. A
+  # model with unsaved changes is closed only when the user has just chosen,
+  # in Commands, to discard them, and then with Model#close(true), which
+  # drops the changes without writing anything. They are never saved "to
+  # keep SketchUp from prompting": an earlier version did that, which wrote
+  # the very work the user had asked to throw away, and left it on disk for
+  # good if the restore then failed.
   #
   # Reopening then differs by platform:
   #
@@ -36,6 +41,9 @@ module SnapshotVCS
 
     # Flush the model to disk so the file git sees matches what is on screen.
     #
+    # Only for Commands.snapshot. Do not call this to make a model closable;
+    # see the note at the top of this module.
+    #
     # @return [Boolean] true when the file on disk is up to date afterwards
     def save(model = Sketchup.active_model)
       return false if model.nil?
@@ -54,8 +62,10 @@ module SnapshotVCS
     #
     # @param path [String]
     # @param note [String] short description of why, used in the manual message
+    # @param discard_changes [Boolean] true only when the user has explicitly
+    #   chosen to throw away the open model's unsaved changes
     # @return [Boolean] true when a reload was scheduled
-    def reload(path, note: 'The snapshot has been restored.')
+    def reload(path, note: 'The snapshot has been restored.', discard_changes: false)
       unless File.exist?(path)
         UI.messagebox("The model file is missing:\n\n#{path}")
         return false
@@ -63,17 +73,18 @@ module SnapshotVCS
 
       # Defer so we are not closing the model from inside a menu command or an
       # HtmlDialog callback that still has frames on the Ruby stack.
-      UI.start_timer(0.0, false) { perform_reload(path, note) }
+      UI.start_timer(0.0, false) { perform_reload(path, note, discard_changes) }
       true
     end
 
-    def perform_reload(path, note)
+    def perform_reload(path, note, discard_changes = false)
       model = Sketchup.active_model
 
       if model && same_file?(model_path(model), path)
-        if model.modified?
-          # Should not happen — Commands saves first — but never throw away
-          # the user's work just because an assumption slipped.
+        if model.modified? && !discard_changes
+          # Should not happen: Commands either snapshots pending work or gets
+          # an explicit "discard" first. But never throw away the user's work
+          # just because an assumption slipped.
           Log.error('refusing to close a modified model; falling back to manual reload')
           UI.messagebox("#{note}\n\nReopen the file to see it:\n\n#{path}")
           return false
@@ -87,6 +98,8 @@ module SnapshotVCS
         camera = capture_camera(model)
 
         begin
+          # true closes without saving and without SketchUp's own prompt. The
+          # model is either clean or the user has just agreed to discard it.
           model.close(true)
         rescue StandardError => e
           Log.error("model.close failed: #{e.message}")

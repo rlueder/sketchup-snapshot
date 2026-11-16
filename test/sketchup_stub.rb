@@ -136,13 +136,14 @@ module Sketchup
 
   class Model
     attr_accessor :path
-    attr_reader :observers, :closed
+    attr_reader :observers, :closed, :save_count, :closed_ignoring_changes
 
     def initialize(path = '')
       @path = path
       @modified = false
       @observers = []
       @closed = false
+      @save_count = 0
       @active_view = View.new
     end
 
@@ -157,6 +158,7 @@ module Sketchup
     end
 
     def save(target = nil)
+      @save_count += 1
       @path = target if target
       @modified = false
       @observers.each { |observer| observer.onSaveModel(self) if observer.respond_to?(:onSaveModel) }
@@ -173,8 +175,9 @@ module Sketchup
       true
     end
 
-    def close(_ignore_changes = false)
+    def close(ignore_changes = false)
       @closed = true
+      @closed_ignoring_changes = ignore_changes
       nil
     end
   end
@@ -216,43 +219,6 @@ module Sketchup
     def invalidate
       @invalidated += 1
       self
-    end
-  end
-
-  # Extension Warehouse licensing. The real one talks to Trimble; this one is
-  # whatever the test says it is, including failing outright.
-  module Licensing
-    LICENSED = 0
-    EXPIRED = 1
-    TRIAL = 2
-    TRIAL_EXPIRED = 3
-    NOT_LICENSED = 4
-
-    class ExtensionLicense
-      attr_reader :state, :days_remaining
-
-      def initialize(state:, days_remaining: nil)
-        @state = state
-        @days_remaining = days_remaining
-      end
-
-      def licensed?
-        [LICENSED, TRIAL].include?(@state)
-      end
-    end
-
-    class << self
-      attr_accessor :stub
-
-      def reset!
-        @stub = nil
-      end
-
-      def get_extension_license(_extension_id)
-        raise 'licensing service unavailable' if @stub == :error
-
-        @stub || ExtensionLicense.new(state: LICENSED)
-      end
     end
   end
 
@@ -433,9 +399,10 @@ module UI
     STYLE_WINDOW = 1
     STYLE_UTILITY = 2
 
-    attr_reader :callbacks, :scripts, :file, :html
+    attr_reader :callbacks, :scripts, :file, :html, :options
 
-    def initialize(_options = {})
+    def initialize(options = {})
+      @options = options
       @callbacks = {}
       @scripts = []
       @visible = false

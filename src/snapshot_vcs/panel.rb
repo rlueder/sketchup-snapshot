@@ -130,7 +130,7 @@ module SnapshotVCS
 
       def build_dialog
         dialog = UI::HtmlDialog.new(
-          dialog_title: "SketchUp Snapshots #{SnapshotVCS::VERSION}",
+          dialog_title: "#{SnapshotVCS::EXTENSION_NAME} #{SnapshotVCS::VERSION}",
           preferences_key: PREFERENCES_KEY,
           scrollable: true,
           resizable: true,
@@ -243,10 +243,6 @@ module SnapshotVCS
         dialog.add_action_callback('su_save_model') do |_ctx|
           ModelIO.request_save_as
           push(Commands.state)
-        end
-
-        dialog.add_action_callback('su_buy') do |_ctx|
-          Licensing.open_store
         end
 
         dialog.add_action_callback('su_reveal') do |_ctx|
